@@ -77,40 +77,39 @@ $files = Get-ChildItem -Path $rootDirectory -Recurse -File
 
 foreach ($file in $files) {
     $runspace = [powershell]::Create().AddScript({
-        param ($file, $rootDirectory, $directoriesByFileType, $baseDuplicateDir, $hashTable)
+        param ($file, $rootDirectory, $directoriesByFileType, $baseDuplicateDir)
 
         function CategorizeAndMove($file) {
             $extension = $file.Extension
             if ($directoriesByFileType.ContainsKey($extension)) {
                 $destination = Join-Path -Path $rootDirectory -ChildPath $directoriesByFileType[$extension]
                 New-Item -Path $destination -ItemType Directory -Force | Out-Null
-                Move-Item -Path $file.FullName -Destination $destination
+                Move-Item -Path $file.FullName -Destination $destination -Force
             }
         }
 
-        function CheckAndMoveDuplicate($file) {
-            $hashValue = Get-FileHashValue -FilePath $file.FullName
-            if ($hashTable.ContainsKey($hashValue)) {
-                $index = 1
+        function MoveToDuplicateDirectory($file) {
+            $index = 1
+            $destDir = Join-Path -Path $rootDirectory -ChildPath ($baseDuplicateDir + "_$index")
+            while (Test-Path (Join-Path $destDir $file.Name)) {
+                $index++
                 $destDir = Join-Path -Path $rootDirectory -ChildPath ($baseDuplicateDir + "_$index")
-                while (Test-Path (Join-Path $destDir $file.Name)) {
-                    $index++
-                    $destDir = Join-Path -Path $rootDirectory -ChildPath ($baseDuplicateDir + "_$index")
-                    New-Item -Path $destDir -ItemType Directory -Force | Out-Null
-                }
-                Move-Item -Path $file.FullName -Destination $destDir
-            } else {
-                $hashTable[$hashValue] = $file.FullName
+                New-Item -Path $destDir -ItemType Directory -Force | Out-Null
             }
+            Move-Item -Path $file.FullName -Destination $destDir -Force
         }
 
-        # Execute the categorize and move function
         CategorizeAndMove $file
 
-        # Execute the check and move duplicates function
-        CheckAndMoveDuplicate $file
+        $hashValue = Get-FileHashValue -FilePath $file.FullName
 
-    }).AddArgument($file).AddArgument($rootDirectory).AddArgument($directoriesByFileType).AddArgument($baseDuplicateDir).AddArgument($hashTable)
+        if (-not $global:hashTable.ContainsKey($hashValue)) {
+            $global:hashTable[$hashValue] = $file.FullName
+        } else {
+            MoveToDuplicateDirectory $file
+        }
+
+    }).AddArgument($file).AddArgument($rootDirectory).AddArgument($directoriesByFileType).AddArgument($baseDuplicateDir)
     
     $runspace.RunspacePool = $runspacePool
     [void]$runspaces.Add([PSCustomObject]@{
