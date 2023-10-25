@@ -15,7 +15,10 @@ $directories = @("duplicate_directory", "bash_directory", "cscript_directory", "
 $directories | ForEach-Object {
     $dirPath = Join-Path -Path $rootDirectory -ChildPath $_
     if (-not (Test-Path $dirPath)) {
-        New-Item -Path $dirPath -ItemType Directory | Out-Null
+        if ((Read-Host "Create directory '$dirPath'? (yes/no)") -eq 'yes') {
+            New-Item -Path $dirPath -ItemType Directory | Out-Null
+            Write-Host "Created directory: $dirPath"
+        }
     }
 }
 
@@ -99,70 +102,58 @@ $extensionMapping = @{
     ".rss"        = "rss_feed_directory";
 }
 
-$runspacePool = [runspacefactory]::CreateRunspacePool(1, [Environment]::ProcessorCount)
-$runspacePool.Open()
-
-# Initialize runspace as an ArrayList
-$runspaces = New-Object System.Collections.ArrayList
-
 $files = Get-ChildItem -Path $rootDirectory -Recurse -File
 
 foreach ($file in $files) {
-    $runspace = [powershell]::Create().AddScript({
-        param ($file, $rootDirectory, $extensionMapping)
 
-        function MoveFileToCategory {
-            param ($file, $destination)
-            $destinationPath = Join-Path -Path $destination -ChildPath $file.Name
+    function MoveFileToCategory {
+        param ($file, $destination)
+        $destinationPath = Join-Path -Path $destination -ChildPath $file.Name
 
-            if (Test-Path $destinationPath) {
-                $originalHash = Get-FileHashValue -filePath $destinationPath
-                $newFileHash = Get-FileHashValue -filePath $file.FullName
+        if (Test-Path $destinationPath) {
+            $originalHash = Get-FileHashValue -filePath $destinationPath
+            $newFileHash = Get-FileHashValue -filePath $file.FullName
 
-                if ($originalHash -eq $newFileHash) {
-                    $duplicateDirBase = Join-Path -Path $rootDirectory -ChildPath "duplicate_directory"
-                    $duplicateDir = $duplicateDirBase
-                    $counter = 1
+            if ($originalHash -eq $newFileHash) {
+                $duplicateDirBase = Join-Path -Path $rootDirectory -ChildPath "duplicate_directory"
+                $duplicateDir = $duplicateDirBase
+                $counter = 1
 
-                    while ((Test-Path (Join-Path -Path $duplicateDir -ChildPath $file.Name)) -or (-not (Test-Path $duplicateDir))) {
-                        $duplicateDir = $duplicateDirBase + $counter
-                        $counter++
-                    }
+                while ((Test-Path (Join-Path -Path $duplicateDir -ChildPath $file.Name)) -or (-not (Test-Path $duplicateDir))) {
+                    $duplicateDir = $duplicateDirBase + $counter
+                    $counter++
+                }
 
-                    if (-not (Test-Path $duplicateDir)) {
+                if (-not (Test-Path $duplicateDir)) {
+                    if ((Read-Host "Create duplicate directory '$duplicateDir'? (yes/no)") -eq 'yes') {
                         New-Item -Path $duplicateDir -ItemType Directory | Out-Null
+                        Write-Host "Created duplicate directory: $duplicateDir"
                     }
+                }
 
+                if ((Read-Host "Move duplicate file '$($file.FullName)' to '$duplicateDir'? (yes/no)") -eq 'yes') {
                     Move-Item -Path $file.FullName -Destination $duplicateDir
-                } else {
-                    Move-Item -Path $file.FullName -Destination $destinationPath -Force
+                    Write-Host "Moved duplicate file: $($file.FullName) to $duplicateDir"
                 }
             } else {
+                if ((Read-Host "Move file '$($file.FullName)' to '$destinationPath'? (yes/no)") -eq 'yes') {
+                    Move-Item -Path $file.FullName -Destination $destinationPath -Force
+                    Write-Host "Moved file: $($file.FullName) to $destinationPath"
+                }
+            }
+        } else {
+            if ((Read-Host "Move file '$($file.FullName)' to '$destinationPath'? (yes/no)") -eq 'yes') {
                 Move-Item -Path $file.FullName -Destination $destinationPath -Force
+                Write-Host "Moved file: $($file.FullName) to $destinationPath"
             }
         }
+    }
 
-        $extension = $file.Extension
-        if ($extensionMapping.ContainsKey($extension)) {
-            $destination = Join-Path -Path $rootDirectory -ChildPath $extensionMapping[$extension]
-            MoveFileToCategory -file $file -destination $destination
-        }
-
-    }).AddArgument($file).AddArgument($rootDirectory).AddArgument($extensionMapping)
-    
-    $runspace.RunspacePool = $runspacePool
-    $null = $runspaces.Add([PSCustomObject]@{
-        Runspace = $runspace
-        Status   = $runspace.BeginInvoke()
-    })
+    $extension = $file.Extension
+    if ($extensionMapping.ContainsKey($extension)) {
+        $destination = Join-Path -Path $rootDirectory -ChildPath $extensionMapping[$extension]
+        MoveFileToCategory -file $file -destination $destination
+    }
 }
-
-$runspaces | ForEach-Object {
-    $_.Runspace.EndInvoke($_.Status)
-}
-
-$runspacePool.Close()
-$runspacePool.Dispose()
 
 Write-Host "Files categorized and duplicates moved successfully!"
-
