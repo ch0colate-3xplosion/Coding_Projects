@@ -96,6 +96,61 @@ foreach ($directory in $directoriesByFileType.Values) {
     }
 }
 
+# Create a runspace pool
+$runspacePool = [runspacefactory]::CreateRunspacePool(1, [Environment]::ProcessorCount)
+$runspacePool.Open()
+
+# Create a list to store runspaces
+$runspaces = @()
+
+# First categorize files by type in parallel
+$files = Get-ChildItem -Path $rootDirectory -Recurse -File
+foreach ($file in $files) {
+    $runspace = [powershell]::Create().AddScript({
+        param ($file, $directoriesByFileType, $rootDirectory)
+        CategorizeAndMove $file
+    }).AddArgument($file).AddArgument($directoriesByFileType).AddArgument($rootDirectory).Runspace
+
+    $runspace.RunspacePool = $runspacePool
+    [void]$runspaces.Add([PSCustomObject]@{
+        Runspace = $runspace
+        Status   = $runspace.BeginInvoke()
+    })
+}
+
+# Wait for all categorization tasks to complete
+$runspaces | ForEach-Object {
+    $_.Runspace.EndInvoke($_.Status)
+}
+
+# Clear the runspaces for the next task
+$runspaces.Clear()
+
+# Now, check for duplicates in each category in parallel
+foreach ($directory in $directoriesByFileType.Values) {
+    $categoryFiles = Get-ChildItem -Path (Join-Path $rootDirectory $directory) -Recurse -File
+    foreach ($file in $categoryFiles) {
+        $runspace = [powershell]::Create().AddScript({
+            param ($file, $hashTable, $rootDirectory, $baseDuplicateDir)
+            CheckAndMove $file
+        }).AddArgument($file).AddArgument($hashTable).AddArgument($rootDirectory).AddArgument($baseDuplicateDir).Runspace
+
+        $runspace.RunspacePool = $runspacePool
+        [void]$runspaces.Add([PSCustomObject]@{
+            Runspace = $runspace
+            Status   = $runspace.BeginInvoke()
+        })
+    }
+}
+
+# Wait for all duplicate checking tasks to complete
+$runspaces | ForEach-Object {
+    $_.Runspace.EndInvoke($_.Status)
+}
+
+$runspacePool.Close()
+$runspacePool.Dispose()
+
 Write-Host "Files categorized and duplicates moved successfully!"
 
 Write-Host "Files categorized and duplicates moved successfully!"
