@@ -151,6 +151,5 @@ $runspaces | ForEach-Object {
 $runspacePool.Close()
 $runspacePool.Dispose()
 
-Write-Host "Files categorized and duplicates moved successfully!"
 
 Write-Host "Files categorized and duplicates moved successfully!"
