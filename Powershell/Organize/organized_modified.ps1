@@ -88,7 +88,6 @@ $extensionMapping = @{
     ".db"         = "database_directory";
     ".sqlite3"    = "database_directory";
     ".sqlite"     = "database_directory";	
-    ".mdb"        = "database_directory";	
     ".mdb"        = "database_directory";
     ".one"        = "microsoft_onenote_directory";
     ".vsdx"       = "microsoft_visio_directory";
