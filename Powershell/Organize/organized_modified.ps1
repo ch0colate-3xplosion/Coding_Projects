@@ -102,7 +102,8 @@ $extensionMapping = @{
 $runspacePool = [runspacefactory]::CreateRunspacePool(1, [Environment]::ProcessorCount)
 $runspacePool.Open()
 
-$runspaces = @()
+# Initialize runspace as an ArrayList
+$runspaces = New-Object System.Collections.ArrayList
 
 $files = Get-ChildItem -Path $rootDirectory -Recurse -File
 
@@ -150,7 +151,7 @@ foreach ($file in $files) {
     }).AddArgument($file).AddArgument($rootDirectory).AddArgument($extensionMapping)
     
     $runspace.RunspacePool = $runspacePool
-    [void]$runspaces.Add([PSCustomObject]@{
+    $null = $runspaces.Add([PSCustomObject]@{
         Runspace = $runspace
         Status   = $runspace.BeginInvoke()
     })
