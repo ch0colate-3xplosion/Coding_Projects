@@ -1,4 +1,3 @@
-#This will require PowerShell 7.0+
 # Define the source and destination drives
 $sourceDrive = "H:\"  # Change this to the source drive letter
 $destinationDrive = "F:\organized_files\"  # Change this to the destination drive letter
@@ -96,14 +95,64 @@ Get-ChildItem -Path $sourceDrive -Recurse -File | ForEach-Object -Parallel {
             if (Test-Path $destinationPath) {
                 # File exists, handle as duplicate
                 $duplicateDir = Get-DuplicateDirectory -baseDirectory $using:destinationBaseDirectory -fileName $file.Name
+                Write-Host "Duplicate file `"$($file.Name)`" found. Copied to `"$duplicateDir`""
                 Copy-Item -Path $file.FullName -Destination $duplicateDir
             } else {
                 # New file, move it to its corresponding directory on the destination drive
+                Write-Host "Moved file `"$($file.Name)`" to `"$destinationDir`""
                 Move-Item -Path $file.FullName -Destination $destinationPath
             }
             break
         }
     }
 } -ThrottleLimit 12 # Adjust the ThrottleLimit based on your system's capabilities
+
+
+# Define a script block to process each file
+$scriptBlock = {
+    param ($file)
+
+    # Extract file extension using Path.GetExtension()
+    $extension = [System.IO.Path]::GetExtension($file.Name).ToLower()
+
+    # Extract file types outside the loop
+    $localFileTypes = $using:fileTypes
+
+    # Check if file's extension is in any of the defined categories
+    foreach ($dir in $localFileTypes.Keys) {
+        $extensions = $localFileTypes[$dir]
+        if ($extension -in $extensions) {
+            $destinationDir = Join-Path -Path $using:destinationBaseDirectory -ChildPath $dir
+            $destinationPath = Join-Path -Path $destinationDir -ChildPath $file.Name
+
+            # Check if a file with the same name already exists in the destination directory
+            if (Test-Path $destinationPath) {
+                # File exists, handle as duplicate
+                $duplicateDir = Get-DuplicateDirectory -baseDirectory $using:destinationBaseDirectory -fileName $file.Name
+                Write-Host "Duplicate file `"$($file.Name)`" found. Copied to `"$duplicateDir`""
+                Copy-Item -Path $file.FullName -Destination $duplicateDir
+            } else {
+                # New file, move it to its corresponding directory on the destination drive
+                Write-Host "Moved file `"$($file.Name)`" to `"$destinationDir`""
+                Move-Item -Path $file.FullName -Destination $destinationPath
+            }
+            break
+        }
+    }
+}
+
+# Starting the parallel processing using Start-Job
+Write-Host "Starting to search and process files in $sourceDrive"
+Get-ChildItem -Path $sourceDrive -Recurse -File | ForEach-Object {
+    Start-Job -ScriptBlock $scriptBlock -ArgumentList $_ | Out-Null
+}
+
+# Wait for all jobs to complete
+Get-Job | Wait-Job
+
+# Clean up finished jobs
+Get-Job | Remove-Job
+
+Write-Host "File processing completed."
 
 Write-Host "File processing completed."

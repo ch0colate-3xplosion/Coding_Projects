@@ -1,4 +1,3 @@
-#This will require PowerShell 7.0+
 # Define the source and destination drives
 $sourceDrive = "H:\"  # Change this to the source drive letter
 $destinationDrive = "F:\organized_files\"  # Change this to the destination drive letter
@@ -74,36 +73,79 @@ foreach ($dir in $fileTypes.Keys) {
     }
 }
 
-# Starting the parallel processing
-Write-Host "Starting to search and process files in $sourceDrive"
-Get-ChildItem -Path $sourceDrive -Recurse -File | ForEach-Object -Parallel {
-    param ($file)
+# Create a list to store job results
+$jobResults = @()
 
-    # Extract file extension using Path.GetExtension()
-    $extension = [System.IO.Path]::GetExtension($file.Name).ToLower()
+# Function to log job progress and time elapsed
+function Log-JobProgress {
+    param (
+        [string]$jobName,
+        [string]$status,
+        [datetime]$startTime
+    )
 
-    # Extract file types outside the loop
-    $localFileTypes = $using:fileTypes
+    $elapsedTime = [datetime]::Now - $startTime
+    Write-Host "$jobName - Status: $status, Elapsed Time: $elapsedTime"
+}
 
-    # Check if file's extension is in any of the defined categories
-    foreach ($dir in $localFileTypes.Keys) {
-        $extensions = $localFileTypes[$dir]
-        if ($extension -in $extensions) {
-            $destinationDir = Join-Path -Path $using:destinationBaseDirectory -ChildPath $dir
-            $destinationPath = Join-Path -Path $destinationDir -ChildPath $file.Name
+# Loop through the files and start a job for each file
+Get-ChildItem -Path $sourceDrive -Recurse -File | ForEach-Object {
+    $file = $_
+    $job = Start-Job -ScriptBlock {
+        param ($file)
+        $jobName = "Job for $($file.Name)"
+        $startTime = [datetime]::Now
 
-            # Check if a file with the same name already exists in the destination directory
-            if (Test-Path $destinationPath) {
-                # File exists, handle as duplicate
-                $duplicateDir = Get-DuplicateDirectory -baseDirectory $using:destinationBaseDirectory -fileName $file.Name
-                Copy-Item -Path $file.FullName -Destination $duplicateDir
-            } else {
-                # New file, move it to its corresponding directory on the destination drive
-                Move-Item -Path $file.FullName -Destination $destinationPath
+        # Log job started
+        Log-JobProgress -jobName $jobName -status "Started" -startTime $startTime
+
+        # Extract file extension using Path.GetExtension()
+        $extension = [System.IO.Path]::GetExtension($file.Name).ToLower()
+
+        # Extract file types outside the loop
+        $localFileTypes = $using:fileTypes
+
+        # Check if file's extension is in any of the defined categories
+        foreach ($dir in $localFileTypes.Keys) {
+            $extensions = $localFileTypes[$dir]
+            if ($extension -in $extensions) {
+                $destinationDir = Join-Path -Path $using:destinationBaseDirectory -ChildPath $dir
+                $destinationPath = Join-Path -Path $destinationDir -ChildPath $file.Name
+
+                # Check if a file with the same name already exists in the destination directory
+                if (Test-Path $destinationPath) {
+                    # File exists, handle as duplicate
+                    $duplicateDir = Get-DuplicateDirectory -baseDirectory $using:destinationBaseDirectory -fileName $file.Name
+                    Write-Host "Duplicate file `"$($file.Name)`" found. Copied to `"$duplicateDir`""
+                    Copy-Item -Path $file.FullName -Destination $duplicateDir
+                } else {
+                    # New file, move it to its corresponding directory on the destination drive
+                    Write-Host "Moved file `"$($file.Name)`" to `"$destinationDir`""
+                    Move-Item -Path $file.FullName -Destination $destinationPath
+                }
+                break
             }
-            break
         }
-    }
-} -ThrottleLimit 12 # Adjust the ThrottleLimit based on your system's capabilities
 
+        # Log job completed
+        Log-JobProgress -jobName $jobName -status "Completed" -startTime $startTime
+    } -ArgumentList $file
+    $jobResults += [PSCustomObject]@{
+        Job = $job
+        File = $file
+    }
+}
+
+# Wait for all jobs to complete
+$jobResults | ForEach-Object {
+    $job = $_.Job
+    $file = $_.File
+    $null = Wait-Job -Job $job
+    Receive-Job -Job $job | ForEach-Object {
+        # Process the output of each job (if needed)
+    }
+    Remove-Job -Job $job
+}
+
+# Your script continues here after all jobs are complete
 Write-Host "File processing completed."
