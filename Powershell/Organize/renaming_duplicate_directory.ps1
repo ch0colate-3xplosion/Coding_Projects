@@ -1,4 +1,4 @@
-$baseDirectory = "H:\"  # Change this to your target directory path
+$baseDirectory = "H:\File 6\database_directory\"  # Change this to your target directory path
 
 # Function to rename "duplicate_directory_#" directories
 function Rename-DuplicateDirectories {
