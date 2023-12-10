@@ -1,4 +1,4 @@
-# Coding_Projects
+# Coding Projects 
 ### Programming Languages
 
 - [x] Bash
@@ -10,3 +10,4 @@
 - [x] PHP
 - [x] PowerShell
 - [x] Python
+- [x] Data Structures and Algorithms
